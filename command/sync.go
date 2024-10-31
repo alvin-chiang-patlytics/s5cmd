@@ -85,6 +85,10 @@ func NewSyncCommandFlags() []cli.Flag {
 			Name:  "exit-on-error",
 			Usage: "stops the sync process if an error is received",
 		},
+		&cli.Int64Flag{
+			Name:  "max-size",
+			Usage: "sync only objects with size less than or equal to given size",
+		},
 	}
 	sharedFlags := NewSharedFlags()
 	return append(syncFlags, sharedFlags...)
@@ -131,6 +135,7 @@ type Sync struct {
 	delete      bool
 	sizeOnly    bool
 	exitOnError bool
+	maxSize     int64
 
 	// s3 options
 	storageOpts storage.Options
@@ -155,6 +160,7 @@ func NewSync(c *cli.Context) Sync {
 		delete:      c.Bool("delete"),
 		sizeOnly:    c.Bool("size-only"),
 		exitOnError: c.Bool("exit-on-error"),
+		maxSize:     c.Int64("max-size"),
 
 		// flags
 		followSymlinks: !c.Bool("no-follow-symlinks"),
@@ -552,6 +558,14 @@ func generateDestinationURL(srcurl, dsturl *url.URL, isBatch bool) *url.URL {
 // shouldSkipObject checks is object should be skipped.
 func (s Sync) shouldSkipSrcObject(object *storage.Object, verbose bool) bool {
 	if object.Type.IsDir() || errorpkg.IsCancelation(object.Err) {
+		return true
+	}
+
+	if s.maxSize > 0 && object.Size > s.maxSize {
+		if verbose {
+			err := fmt.Errorf("skipping object '%v' as it exceeds max-size limit", object)
+			printError(s.fullCommand, s.op, err)
+		}
 		return true
 	}
 
